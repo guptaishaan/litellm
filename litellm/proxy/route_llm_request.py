@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 import litellm
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.router_utils.common_utils import _is_proxy_admin_request
+from litellm.router_utils.fallback_event_handlers import get_fallback_model_group
 
 # Client-supplied params that make the router or the call path fabricate a
 # failure or a delay instead of calling the provider. The ``mock_testing_*``
@@ -55,22 +56,38 @@ def _is_a2a_agent_model(model_name: Any) -> bool:
     return isinstance(model_name, str) and model_name.startswith("a2a/")
 
 
-def _raise_if_model_fully_blocked(llm_router: LitellmRouter, model_name: Any, team_id: str | None) -> None:
+def _has_fallback_for_model(model_name: str, fallbacks: list | None) -> bool:
+    if not fallbacks:
+        return False
+    fallback_group, generic_idx = get_fallback_model_group(fallbacks=fallbacks, model_group=model_name)
+    return fallback_group is not None or generic_idx is not None
+
+
+def _raise_if_model_fully_blocked(
+    llm_router: LitellmRouter,
+    model_name: Any,
+    team_id: str | None,
+    request_fallbacks: list | None = None,
+) -> None:
     if not isinstance(model_name, str) or not model_name:
         return
     if not isinstance(llm_router, litellm.Router):
         return
     deployments: Final = llm_router.get_model_list(model_name=model_name, team_id=team_id) or []
-    if llm_router._are_all_deployments_blocked(deployments):
-        raise litellm.PermissionDeniedError(
-            message="Model is blocked",
-            model=model_name,
-            llm_provider="",
-            response=httpx.Response(
-                status_code=403,
-                request=httpx.Request(method="POST", url="https://github.com/BerriAI/litellm"),
-            ),
-        )
+    if not llm_router._are_all_deployments_blocked(deployments):
+        return
+    effective_fallbacks: Final = request_fallbacks if request_fallbacks is not None else llm_router.fallbacks
+    if _has_fallback_for_model(model_name=model_name, fallbacks=effective_fallbacks):
+        return
+    raise litellm.PermissionDeniedError(
+        message="Model is blocked",
+        model=model_name,
+        llm_provider="",
+        response=httpx.Response(
+            status_code=403,
+            request=httpx.Request(method="POST", url="https://github.com/BerriAI/litellm"),
+        ),
+    )
 
 
 ROUTE_ENDPOINT_MAPPING: Final = {
@@ -489,7 +506,12 @@ async def route_request(
         else:
             return getattr(litellm, f"{route_type}")(**data)
     elif llm_router is not None:
-        _raise_if_model_fully_blocked(llm_router=llm_router, model_name=data.get("model"), team_id=team_id)
+        _raise_if_model_fully_blocked(
+            llm_router=llm_router,
+            model_name=data.get("model"),
+            team_id=team_id,
+            request_fallbacks=data.get("fallbacks"),
+        )
         # Evals API: always route to litellm directly (not through router)
         # But extract model credentials if a model is provided
         if route_type in [

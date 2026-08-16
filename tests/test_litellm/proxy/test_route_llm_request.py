@@ -1093,6 +1093,86 @@ async def test_route_request_rejects_chat_completion_without_messages():
     llm_router.acompletion.assert_not_called()
 
 
+def test_raise_if_model_fully_blocked_skips_raise_when_router_fallback_exists():
+    """When all deployments of a model are blocked but the router has a configured
+    fallback for that model group, the check must not raise: the fallback machinery
+    in the router will handle routing to the healthy fallback."""
+    from litellm.proxy.route_llm_request import _raise_if_model_fully_blocked
+
+    import litellm
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "primary-model",
+                "litellm_params": {"model": "openai/gpt-4o", "api_key": "sk-test"},
+                "model_info": {"id": "primary-dep", "blocked": True},
+            },
+            {
+                "model_name": "fallback-model",
+                "litellm_params": {"model": "openai/gpt-4o-mini", "api_key": "sk-test"},
+                "model_info": {"id": "fallback-dep"},
+            },
+        ],
+        fallbacks=[{"primary-model": ["fallback-model"]}],
+    )
+
+    # Must not raise: fallback is available for this model group
+    _raise_if_model_fully_blocked(llm_router=router, model_name="primary-model", team_id=None)
+
+
+def test_raise_if_model_fully_blocked_raises_when_no_fallback():
+    """When all deployments of a model are blocked and there is no configured
+    fallback, the check must raise PermissionDeniedError."""
+    from litellm.proxy.route_llm_request import _raise_if_model_fully_blocked
+
+    import litellm
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "primary-model",
+                "litellm_params": {"model": "openai/gpt-4o", "api_key": "sk-test"},
+                "model_info": {"id": "primary-dep", "blocked": True},
+            },
+        ],
+    )
+
+    with pytest.raises(litellm.PermissionDeniedError, match="Model is blocked"):
+        _raise_if_model_fully_blocked(llm_router=router, model_name="primary-model", team_id=None)
+
+
+def test_raise_if_model_fully_blocked_skips_raise_when_request_fallback_exists():
+    """Request-level fallbacks (passed in the request body) must also suppress
+    the early raise, so callers that supply fallbacks inline are not rejected."""
+    from litellm.proxy.route_llm_request import _raise_if_model_fully_blocked
+
+    import litellm
+
+    router = litellm.Router(
+        model_list=[
+            {
+                "model_name": "primary-model",
+                "litellm_params": {"model": "openai/gpt-4o", "api_key": "sk-test"},
+                "model_info": {"id": "primary-dep", "blocked": True},
+            },
+            {
+                "model_name": "fallback-model",
+                "litellm_params": {"model": "openai/gpt-4o-mini", "api_key": "sk-test"},
+                "model_info": {"id": "fallback-dep"},
+            },
+        ],
+    )
+
+    # No router-level fallbacks, but request supplies fallbacks inline
+    _raise_if_model_fully_blocked(
+        llm_router=router,
+        model_name="primary-model",
+        team_id=None,
+        request_fallbacks=[{"primary-model": ["fallback-model"]}],
+    )
+
+
 @pytest.mark.asyncio
 async def test_route_request_routing_group_name_passes_model_gate():
     from unittest.mock import AsyncMock, patch
