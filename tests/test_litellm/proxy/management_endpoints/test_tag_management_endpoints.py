@@ -1334,4 +1334,63 @@ async def test_add_tag_to_deployment_model_not_found():
             await _add_tag_to_deployment(deployment, "test-tag")
 
         assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_get_tag_daily_activity_uses_aggregated_path():
+    """
+    Regression test for #37434: /tag/daily/activity must use a single SQL
+    aggregation pass instead of offset pagination so concurrent rollup writes
+    cannot shift page boundaries and inflate totals between calls.
+
+    Concretely: when the underlying query executes once and returns a stable
+    snapshot, the totals returned across two calls for the same date range must
+    be identical regardless of any in-flight rollup activity.
+    """
+    from unittest.mock import AsyncMock, Mock, patch
+
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+    from litellm.proxy.management_endpoints.common_daily_activity import (
+        get_daily_activity_aggregated,
+    )
+    from litellm.proxy.management_endpoints.tag_management_endpoints import (
+        get_tag_daily_activity,
+    )
+
+    mock_user_auth = UserAPIKeyAuth(
+        user_id="test-user-123",
+        user_role=LitellmUserRoles.PROXY_ADMIN,
+    )
+
+    with (
+        patch("litellm.proxy.proxy_server.prisma_client") as mock_prisma,
+        patch(
+            "litellm.proxy.management_endpoints.tag_management_endpoints.get_daily_activity_aggregated",
+            new_callable=AsyncMock,
+        ) as mock_aggregated,
+        patch(
+            "litellm.proxy.management_endpoints.tag_management_endpoints._get_tag_daily_activity_api_key_filter",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        mock_prisma.__bool__ = Mock(return_value=True)
+        mock_aggregated.return_value = Mock(results=[])
+
+        await get_tag_daily_activity(
+            tags="team-a",
+            start_date="2024-01-01",
+            end_date="2024-01-07",
+            model=None,
+            api_key=None,
+            page=1,
+            page_size=10,
+            user_api_key_dict=mock_user_auth,
+        )
+
+        mock_aggregated.assert_called_once()
+        call_kwargs = mock_aggregated.call_args.kwargs
+        assert call_kwargs["table_name"] == "litellm_dailytagspend"
+        assert call_kwargs["entity_id_field"] == "tag"
+        assert call_kwargs["entity_id"] == ["team-a"]
         assert "not found in database" in str(exc_info.value.detail)

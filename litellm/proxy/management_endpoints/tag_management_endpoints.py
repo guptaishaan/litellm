@@ -27,7 +27,7 @@ from litellm.proxy.common_utils.user_api_key_cache import (
 )
 from litellm.proxy.management_endpoints.common_daily_activity import (
     SpendAnalyticsPaginatedResponse,
-    get_daily_activity,
+    get_daily_activity_aggregated,
 )
 from litellm.proxy.management_helpers.utils import handle_budget_for_entity
 from litellm.repositories.model_repository import ModelRepository
@@ -764,7 +764,7 @@ async def get_tag_daily_activity(
     if scoped_api_key_filter == []:
         return SpendAnalyticsPaginatedResponse(results=[])
 
-    return await get_daily_activity(
+    return await get_daily_activity_aggregated(
         prisma_client=prisma_client,
         table_name="litellm_dailytagspend",
         entity_id_field="tag",
@@ -774,14 +774,4 @@ async def get_tag_daily_activity(
         end_date=end_date,
         model=model,
         api_key=scoped_api_key_filter,
-        page=page,
-        page_size=page_size,
-        # metadata_metrics_func=None because litellm_dailytagspend rows are
-        # pre-aggregated per (date, tag, model, …) and have no request_id.
-        # Deduplication across tags is therefore not possible at this level —
-        # a request tagged with N tags contributes its spend to N separate rows,
-        # so passing compute_tag_metadata_totals would double-count spend when
-        # multiple tags are present.  The panel is primarily used to inspect
-        # individual tags, making this trade-off acceptable.
-        metadata_metrics_func=None,
     )
