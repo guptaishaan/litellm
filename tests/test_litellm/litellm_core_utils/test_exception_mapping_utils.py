@@ -762,3 +762,33 @@ def test_azure_404_with_invalid_request_error_type_maps_to_not_found():
 
     assert excinfo.value.status_code == 404
     assert "Response with id 'resp_abc' not found." in excinfo.value.message
+
+
+def test_anthropic_usage_limit_400_maps_to_rate_limit_error():
+    """Anthropic returns 400 invalid_request_error for exhausted API usage limits.
+
+    That message should be mapped to RateLimitError, not BadRequestError, so
+    callers can handle throttling correctly.
+    """
+    from litellm.llms.anthropic.common_utils import AnthropicError
+
+    error_body = (
+        b'{"type":"error","error":{"type":"invalid_request_error",'
+        b'"message":"You have reached your specified API usage limits. '
+        b'You will regain access on 2026-09-01 at 00:00 UTC."},'
+        b'"request_id":"req_011CeDfeyYs7N6neZrLwFxPJ"}'
+    )
+    original_exception = AnthropicError(
+        status_code=400,
+        message=str(error_body),
+    )
+
+    with pytest.raises(litellm.RateLimitError) as excinfo:
+        exception_type(
+            model="claude-haiku-4-5-20251001",
+            original_exception=original_exception,
+            custom_llm_provider="anthropic",
+        )
+
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.llm_provider == "anthropic"

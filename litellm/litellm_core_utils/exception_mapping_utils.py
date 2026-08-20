@@ -536,6 +536,12 @@ def _map_anthropic_exception(
             model=model,
             llm_provider="anthropic",
         )
+    if "reached your specified API usage limits" in error_str or ("You have reached your" in error_str and "usage limit" in error_str):
+        raise RateLimitError(
+            message=f"AnthropicException - {error_str}",
+            llm_provider="anthropic",
+            model=model,
+        )
     if "Client error '400 Bad Request'" in error_str:
         raise BadRequestError(
             message=f"AnthropicError - {error_str}",
