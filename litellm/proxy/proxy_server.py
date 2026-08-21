@@ -1996,7 +1996,7 @@ try:
     app.mount(
         f"{litellm_asset_prefix}/_next",
         StaticFiles(directory=os.path.join(ui_path, "_next")),
-        name="next_static",
+        name="next_static_prefixed",
     )
     # print(f"mounted _next at {server_root_path}/ui/_next")
 
