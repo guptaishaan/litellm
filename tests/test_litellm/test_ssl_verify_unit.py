@@ -212,6 +212,51 @@ def test_ssl_verify_parameter_types():
     assert result is not None or result is None
 
 
+class TestSslVerifyNotLeakedToExtraBody:
+    """Regression tests for https://github.com/BerriAI/litellm/issues/38178.
+
+    ssl_verify must never appear inside extra_body for openai-compatible providers.
+    """
+
+    def test_ssl_verify_absent_from_extra_body_openai(self):
+        from litellm.utils import get_optional_params
+
+        optional_params = get_optional_params(
+            model="gpt-4o",
+            custom_llm_provider="openai",
+            ssl_verify="/path/to/ca.crt",
+        )
+        extra_body = optional_params.get("extra_body", {})
+        assert "ssl_verify" not in extra_body, (
+            "ssl_verify must not leak into extra_body for the openai provider"
+        )
+
+    def test_ssl_verify_absent_from_extra_body_openai_compatible(self):
+        from litellm.utils import get_optional_params
+
+        optional_params = get_optional_params(
+            model="my-model",
+            custom_llm_provider="openai_compatible",
+            ssl_verify="/path/to/ca.crt",
+        )
+        extra_body = optional_params.get("extra_body", {})
+        assert "ssl_verify" not in extra_body, (
+            "ssl_verify must not leak into extra_body for openai_compatible providers"
+        )
+
+    def test_ssl_verify_absent_from_extra_body_hosted_vllm(self):
+        from litellm.utils import get_optional_params
+
+        optional_params = get_optional_params(
+            model="my-model",
+            custom_llm_provider="hosted_vllm",
+            ssl_verify=False,
+        )
+        extra_body = optional_params.get("extra_body", {})
+        assert "ssl_verify" not in extra_body, (
+            "ssl_verify must not leak into extra_body for hosted_vllm provider"
+        )
+
+
 if __name__ == "__main__":
-    # Run tests
     pytest.main([__file__, "-v", "--tb=short"])

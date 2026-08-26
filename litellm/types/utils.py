@@ -3604,6 +3604,7 @@ all_litellm_params = (
         "order",
         "enable_tag_filtering",
         "enable_json_schema_validation",
+        "ssl_verify",
         "use_xai_oauth",
         "auto_router_config_path",
         "auto_router_config",

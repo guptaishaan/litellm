@@ -347,6 +347,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
         organization: str | None = None,
         client: OpenAI | AsyncOpenAI | None = None,
         shared_session: Optional["ClientSession"] = None,
+        ssl_verify: bool | str | None = None,
     ) -> OpenAI | AsyncOpenAI | None:
         client_initialization_params: Final[dict] = locals()
         if client is None:
@@ -364,9 +365,9 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                 if isinstance(cached_client, OpenAI) or isinstance(cached_client, AsyncOpenAI):
                     return cached_client
             http_client: Final[httpx.Client | httpx.AsyncClient | None] = (
-                OpenAIChatCompletion._get_async_http_client(shared_session=shared_session)
+                OpenAIChatCompletion._get_async_http_client(shared_session=shared_session, ssl_verify=ssl_verify)
                 if is_async
-                else OpenAIChatCompletion._get_sync_http_client()
+                else OpenAIChatCompletion._get_sync_http_client(ssl_verify=ssl_verify)
             )
             if is_async:
                 _new_client: OpenAI | AsyncOpenAI = AsyncOpenAI(
@@ -729,6 +730,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                             max_retries=max_retries,
                             organization=organization,
                             client=client,
+                            ssl_verify=litellm_params.get("ssl_verify"),
                         )
 
                         ## LOGGING
@@ -870,6 +872,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                     organization=organization,
                     client=client,
                     shared_session=shared_session,
+                    ssl_verify=litellm_params.get("ssl_verify"),
                 )
 
                 ## LOGGING
@@ -1050,6 +1053,7 @@ class OpenAIChatCompletion(BaseLLM, BaseOpenAILLM):
                     organization=organization,
                     client=client,
                     shared_session=shared_session,
+                    ssl_verify=litellm_params.get("ssl_verify"),
                 )
                 ## LOGGING
                 logging_obj.pre_call(
